@@ -1,0 +1,421 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== CORE / SHARED ====================
+
+enum TenantType {
+  AUCTION_PULSE
+  LUXURY_PULSE
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  ANALYST
+  SPECIALIST
+  VIEWER
+}
+
+model Tenant {
+  id        String     @id @default(uuid())
+  name      String
+  type      TenantType
+  planTier  String     @default("standard")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  users                User[]
+  auctions             Auction[]
+  bidders              Bidder[]
+  sellers              Seller[]
+  listings             Listing[]
+  skus                 SKU[]
+  sellerAccounts       SellerAccount[]
+  buyerAccounts        BuyerAccount[]
+  auditLogs            AuditLog[]
+  fraudAlerts          FraudAlert[]
+  predictionLogs       PredictionLog[]
+  engagementWorkflows  EngagementWorkflow[]
+
+  @@index([type])
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         UserRole @default(VIEWER)
+  tenantId     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  authenticationJobs AuthenticationJob[]
+  auditLogs          AuditLog[]
+
+  @@index([tenantId])
+  @@index([email])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model FraudAlert {
+  id                String   @id @default(uuid())
+  tenantId          String
+  severity          String   // LOW, MEDIUM, HIGH, CRITICAL
+  category          String
+  message           String
+  relatedEntityType String?
+  relatedEntityId   String?
+  status            String   @default("OPEN") // OPEN, INVESTIGATING, RESOLVED, DISMISSED
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([severity])
+  @@index([status])
+}
+
+// ==================== AUCTION PULSE ====================
+
+enum AuctionStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum LotStatus {
+  PENDING
+  CATALOGED
+  AUTHENTICATED
+  LIVE
+  SOLD
+  UNSOLD
+  WITHDRAWN
+}
+
+model Auction {
+  id                       String        @id @default(uuid())
+  tenantId                 String
+  name                     String
+  category                 String
+  description              String?
+  startTime                DateTime
+  endTime                  DateTime
+  status                   AuctionStatus @default(DRAFT)
+  expectedTotalHammerLow   Float?
+  expectedTotalHammerHigh  Float?
+  actualTotalHammer        Float?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  lots   Lot[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([startTime])
+}
+
+model Lot {
+  id                String    @id @default(uuid())
+  auctionId         String
+  lotNumber         Int
+  title             String
+  category          String
+  description       String?
+  artist            String?
+  year              Int?
+  medium            String?
+  dimensions        String?
+  estimateLow       Float
+  estimateHigh      Float
+  reservePrice      Float?
+  hammerPrice       Float?
+  predictedHammer   Float?
+  confidenceLow     Float?
+  confidenceHigh    Float?
+  status            LotStatus @default(PENDING)
+  authenticityScore Float?
+  provenanceScore   Float?
+  conditionScore    Float?
+  conditionNarrative String?
+  liquidityScore    Float?
+  sellerId          String?
+  imageUrls         String[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  auction Auction @relation(fields: [auctionId], references: [id])
+  seller  Seller? @relation(fields: [sellerId], references: [id])
+  bids    Bid[]
+
+  @@index([auctionId])
+  @@index([status])
+  @@index([category])
+}
+
+model Bidder {
+  id              String   @id @default(uuid())
+  tenantId        String
+  name            String
+  email           String
+  phone           String?
+  segment         String   @default("STANDARD") // VIP, PREMIUM, STANDARD, NEW
+  activationScore Float?
+  vipFlag         Boolean  @default(false)
+  lifetimeSpend   Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  bids   Bid[]
+
+visitorId String?
+
+  @@index([tenantId])
+  @@index([segment])
+  @@index([vipFlag])
+}
+
+model Bid {
+  id        String   @id @default(uuid())
+  lotId     String
+  bidderId  String
+  amount    Float
+  timestamp DateTime @default(now())
+  channel   String   @default("ONLINE") // ONLINE, PHONE, FLOOR
+
+  lot    Lot    @relation(fields: [lotId], references: [id])
+  bidder Bidder @relation(fields: [bidderId], references: [id])
+
+  @@index([lotId])
+  @@index([bidderId])
+  @@index([timestamp])
+}
+
+model Seller {
+  id         String   @id @default(uuid())
+  tenantId   String
+  name       String
+  email      String
+  phone      String?
+  riskScore  Float?
+  repeatRate Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  lots   Lot[]
+
+  @@index([tenantId])
+}
+
+// ==================== LUXURY PULSE ====================
+
+enum ListingStatus {
+  INTAKE
+  AUTHENTICATION_PENDING
+  AUTHENTICATED
+  LISTED
+  SOLD
+  RETURNED
+  REJECTED
+}
+
+enum AuthJobStatus {
+  QUEUED
+  IN_PROGRESS
+  COMPLETED
+  ESCALATED
+  FAILED
+}
+
+model Listing {
+  id                  String        @id @default(uuid())
+  tenantId            String
+  title               String
+  brand               String
+  model               String?
+  category            String
+  skuId               String?
+  status              ListingStatus @default(INTAKE)
+  askingPrice         Float
+  predictedPrice      Float?
+  recommendedPrice    Float?
+  marginProjection    Float?
+  conditionScore      Float?
+  conditionNarrative  String?
+  authenticityScore   Float?
+  sellerAccountId     String?
+  imageUrls           String[]
+  metadata            Json?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  sku                SKU?                @relation(fields: [skuId], references: [id])
+  sellerAccount      SellerAccount?      @relation(fields: [sellerAccountId], references: [id])
+  authenticationJobs AuthenticationJob[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([brand])
+  @@index([category])
+}
+
+model SKU {
+  id              String   @id @default(uuid())
+  tenantId        String
+  brand           String
+  model           String
+  referenceNumber String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  listings Listing[]
+
+  @@index([tenantId])
+  @@index([brand, model])
+}
+
+model AuthenticationJob {
+  id                  String        @id @default(uuid())
+  listingId           String
+  status              AuthJobStatus @default(QUEUED)
+  queuePosition       Int?
+  assignedToUserId    String?
+  counterfeitRiskScore Float?
+  anomalyFlags        Json?
+  notes               String?
+  completedAt         DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  listing    Listing @relation(fields: [listingId], references: [id])
+  assignedTo User?   @relation(fields: [assignedToUserId], references: [id])
+
+  @@index([listingId])
+  @@index([status])
+  @@index([queuePosition])
+}
+
+model SellerAccount {
+  id                          String   @id @default(uuid())
+  tenantId                    String
+  name                        String
+  email                       String
+  phone                       String?
+  valueScore                  Float?
+  lifetimeGrossMerchandiseValue Float   @default(0)
+  retentionScore              Float?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  listings Listing[]
+
+  @@index([tenantId])
+}
+
+model BuyerAccount {
+  id              String   @id @default(uuid())
+  tenantId        String
+  name            String
+  email           String
+  phone           String?
+  segment         String   @default("STANDARD")
+  vipFlag         Boolean  @default(false)
+  activationScore Float?
+  repeatRate      Float?
+  lifetimeSpend   Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([segment])
+}
+
+// ==================== INTELLIGENCE / ENGAGEMENT ====================
+
+model PredictionLog {
+  id            String   @id @default(uuid())
+  tenantId      String
+  modelType     String
+  inputSummary  Json
+  outputSummary Json
+  score         Float?
+  latencyMs     Int?
+  createdAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([modelType])
+  @@index([createdAt])
+}
+
+model EngagementWorkflow {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  triggerType String
+  status      String   @default("ACTIVE") // ACTIVE, PAUSED, ARCHIVED
+  config      Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id])
+  events EngagementEvent[]
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model EngagementEvent {
+  id         String   @id @default(uuid())
+  workflowId String
+  targetType String
+  targetId   String
+  eventType  String
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  workflow EngagementWorkflow @relation(fields: [workflowId], references: [id])
+
+  @@index([workflowId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}

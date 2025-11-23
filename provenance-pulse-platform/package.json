@@ -1,0 +1,25 @@
+{
+  "name": "provenance-pulse-platform",
+  "version": "1.0.0",
+  "description": "Provenance Pulse Platform with Auction Pulse and Luxury Pulse verticals",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:ml\"",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:ml": "cd ml && uvicorn api.main:app --reload --port 8001",
+    "build": "npm run build --workspaces",
+    "docker:up": "docker-compose up --build",
+    "docker:down": "docker-compose down",
+    "db:migrate": "npm run db:migrate --workspace=backend",
+    "db:seed": "npm run db:seed --workspace=backend",
+    "db:reset": "npm run db:reset --workspace=backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provenance-frontend
+  labels:
+    app: provenance-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: provenance-frontend
+  template:
+    metadata:
+      labels:
+        app: provenance-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: provenance-pulse/frontend:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: provenance-config
+                  key: api-url
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: provenance-frontend
+spec:
+  selector:
+    app: provenance-frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: LoadBalancer
